@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 10, "column": 0}, "map": {"version":3,"sources":["file:///A:/CODEBASE/api/app/page.tsx"],"sourcesContent":["export default function Home() {\r\n  return Response.json({ name: 'UNIFESTO API', version: '1.0.0', status: 'ok' });\r\n}\r\n"],"names":["Home","Response","json","name","version","status"],"mappings":";;;;AAAe,SAASA;IACtB,OAAOC,SAASC,IAAI,CAAC;QAAEC,MAAM;QAAgBC,SAAS;QAASC,QAAQ;IAAK;AAC9E"}}]
-}
