@@ -6,6 +6,78 @@ import {
   getOrCreateDeviceId,
 } from "@/lib/tracking/device-id";
 
+const MAX_ATTEMPTS = 10;
+const BLOCK_DURATION_MS = 24 * 60 * 60 * 1000;
+
+type IpGuardState = {
+  attempts: number;
+  blockedUntil: number;
+  updatedAt: number;
+};
+
+const ipGuardStore = new Map<string, IpGuardState>();
+
+const getClientIp = (request: NextRequest) => {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  return request.headers.get("x-real-ip") ?? "unknown";
+};
+
+const cleanupIpGuardStore = (now: number) => {
+  for (const [ip, state] of ipGuardStore.entries()) {
+    const stale = now - state.updatedAt > BLOCK_DURATION_MS;
+    const unblockedAndOld = state.blockedUntil <= now && state.attempts <= 0;
+    if (stale || unblockedAndOld) {
+      ipGuardStore.delete(ip);
+    }
+  }
+};
+
+const prohibitedResponse = () =>
+  new NextResponse("You are prohibited only", {
+    status: 403,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
+
+const shouldBlockIp = (request: NextRequest) => {
+  const now = Date.now();
+  cleanupIpGuardStore(now);
+
+  const ip = getClientIp(request);
+  const state = ipGuardStore.get(ip) ?? {
+    attempts: 0,
+    blockedUntil: 0,
+    updatedAt: now,
+  };
+
+  if (state.blockedUntil > now) {
+    state.updatedAt = now;
+    ipGuardStore.set(ip, state);
+    return true;
+  }
+
+  if (state.blockedUntil <= now && state.blockedUntil !== 0) {
+    state.attempts = 0;
+    state.blockedUntil = 0;
+  }
+
+  state.attempts += 1;
+  state.updatedAt = now;
+
+  if (state.attempts > MAX_ATTEMPTS) {
+    state.blockedUntil = now + BLOCK_DURATION_MS;
+    ipGuardStore.set(ip, state);
+    return true;
+  }
+
+  ipGuardStore.set(ip, state);
+  return false;
+};
+
 const getAllowedOrigin = (origin: string | null) => {
   if (!origin) {
     return null;
@@ -30,6 +102,10 @@ const attachCorsHeaders = (request: NextRequest, response: NextResponse) => {
 };
 
 export async function middleware(request: NextRequest) {
+  if (shouldBlockIp(request)) {
+    return prohibitedResponse();
+  }
+
   if (request.method === "OPTIONS") {
     return attachCorsHeaders(request, new NextResponse(null, { status: 204 }));
   }
@@ -47,5 +123,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/", "/api/:path*"],
 };
