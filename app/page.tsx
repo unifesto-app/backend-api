@@ -1,4 +1,6 @@
-export default function Home() {
+import type { JSX } from 'react';
+
+export default function Home(): JSX.Element {
   return (
     <main style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>UNIFESTO API</h1>
