@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 
 export default function Home(): JSX.Element {
+  const [seconds, setSeconds] = useState(5);
+
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    if (seconds <= 0) {
       window.location.replace('https://unifesto.app/');
-    }, 5000);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSeconds((prev) => prev - 1);
+    }, 1000);
 
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [seconds]);
 
   return (
     <main
@@ -50,7 +57,10 @@ export default function Home(): JSX.Element {
         </div>
         <h1 style={{ margin: 0, fontSize: '1.6rem' }}>Nothing to see here</h1>
         <p style={{ marginTop: '0.6rem', marginBottom: 0, color: '#6b7280' }}>
-          Redirecting to home in 5 seconds.
+          Redirecting to home in {seconds} second{seconds === 1 ? '' : 's'}.
+        </p>
+        <p style={{ marginTop: '0.35rem', marginBottom: 0, color: '#374151', fontWeight: 600 }}>
+          {seconds > 0 ? String(seconds) : '0'}
         </p>
         <a
           href="https://unifesto.app/"
