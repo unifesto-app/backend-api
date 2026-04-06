@@ -103,6 +103,10 @@ const attachCorsHeaders = (request: NextRequest, response: NextResponse) => {
 
 export async function middleware(request: NextRequest) {
   if (shouldBlockIp(request)) {
+    if (!request.nextUrl.pathname.startsWith("/api")) {
+      return NextResponse.redirect(new URL("/blocked", request.url));
+    }
+
     return prohibitedResponse();
   }
 
