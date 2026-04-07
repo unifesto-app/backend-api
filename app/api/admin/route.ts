@@ -1,16 +1,16 @@
 // Function 7 — /api/admin
-// ?resource=settings|audit-logs|api-keys|announcements|categories
+// ?resource=settings|audit-logs|api-keys|announcements|categories|roles
 // GET    → fetch resource
-// POST   → create (announcements, api-keys, categories)
-// PATCH  → update (settings, announcements ?id=)
-// DELETE → delete (api-keys, categories, announcements ?id=)
+// POST   → create (announcements, api-keys, categories, roles)
+// PATCH  → update (settings, announcements ?id=, roles ?id=)
+// DELETE → delete (api-keys, categories, announcements, roles ?id=)
 
 import { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
 import crypto from 'crypto';
 
-type Resource = 'settings' | 'audit-logs' | 'api-keys' | 'announcements' | 'categories';
+type Resource = 'settings' | 'audit-logs' | 'api-keys' | 'announcements' | 'categories' | 'roles';
 
 export async function GET(req: NextRequest) {
   const supabase = createClient(await cookies());
@@ -74,6 +74,14 @@ export async function GET(req: NextRequest) {
       if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
       return Response.json({ success: true, data });
     }
+    case 'roles': {
+      const { data, error } = await supabase
+        .from('roles')
+        .select('id, name, description, permissions, is_system, created_at')
+        .order('name');
+      if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
+      return Response.json({ success: true, data });
+    }
     default:
       return Response.json({ success: false, error: 'Invalid resource' }, { status: 400 });
   }
@@ -126,6 +134,18 @@ export async function POST(req: NextRequest) {
       if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
       return Response.json({ success: true, data }, { status: 201 });
     }
+    case 'roles': {
+      const { name, description, permissions } = body;
+      if (!name) return Response.json({ success: false, error: 'name is required' }, { status: 400 });
+      const perms = Array.isArray(permissions) ? permissions : [];
+      const { data, error } = await supabase
+        .from('roles')
+        .insert({ name, description: description ?? '', permissions: perms, is_system: false, created_by: user.id })
+        .select('id, name, description, permissions, is_system, created_at')
+        .single();
+      if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
+      return Response.json({ success: true, data }, { status: 201 });
+    }
     default:
       return Response.json({ success: false, error: 'POST not supported for this resource' }, { status: 400 });
   }
@@ -144,7 +164,7 @@ export async function PATCH(req: NextRequest) {
     case 'settings': {
       const allowed = [
         'platform_name', 'support_email', 'timezone', 'currency',
-        'allow_registration', 'require_email_verification', 'maintenance_mode',
+        'allow_registration', 'require_email_verification', 'allow_organizer_self_registration', 'maintenance_mode',
         'smtp_host', 'smtp_port', 'smtp_user',
       ];
       const updates = Object.fromEntries(
@@ -169,6 +189,34 @@ export async function PATCH(req: NextRequest) {
       if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
       return Response.json({ success: true, data });
     }
+    case 'roles': {
+      const id = searchParams.get('id');
+      if (!id) return Response.json({ success: false, error: 'id is required' }, { status: 400 });
+
+      const { data: existing, error: existingError } = await supabase
+        .from('roles')
+        .select('is_system')
+        .eq('id', id)
+        .single();
+      if (existingError) return Response.json({ success: false, error: existingError.message }, { status: 500 });
+      if (existing?.is_system) return Response.json({ success: false, error: 'System roles cannot be edited' }, { status: 403 });
+
+      const updates = {
+        ...(typeof body.name === 'string' ? { name: body.name } : {}),
+        ...(typeof body.description === 'string' ? { description: body.description } : {}),
+        ...(Array.isArray(body.permissions) ? { permissions: body.permissions } : {}),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('roles')
+        .update(updates)
+        .eq('id', id)
+        .select('id, name, description, permissions, is_system, created_at')
+        .single();
+      if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
+      return Response.json({ success: true, data });
+    }
     default:
       return Response.json({ success: false, error: 'PATCH not supported for this resource' }, { status: 400 });
   }
@@ -188,10 +236,21 @@ export async function DELETE(req: NextRequest) {
     'api-keys': 'api_keys',
     'categories': 'categories',
     'announcements': 'announcements',
+    'roles': 'roles',
   };
 
   const table = tableMap[resource];
   if (!table) return Response.json({ success: false, error: 'DELETE not supported for this resource' }, { status: 400 });
+
+  if (resource === 'roles') {
+    const { data: existing, error: existingError } = await supabase
+      .from('roles')
+      .select('is_system')
+      .eq('id', id)
+      .single();
+    if (existingError) return Response.json({ success: false, error: existingError.message }, { status: 500 });
+    if (existing?.is_system) return Response.json({ success: false, error: 'System roles cannot be deleted' }, { status: 403 });
+  }
 
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
