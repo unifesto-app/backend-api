@@ -4,16 +4,15 @@
 // DELETE → cancel event
 
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
-import { createClient } from '@/utils/supabase/server';
+import { requireAuth } from '@/lib/request-auth';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Ctx) {
+  const auth = await requireAuth(_req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
   const { id } = await params;
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   const { data, error } = await supabase
     .from('events')
@@ -26,10 +25,10 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 }
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
+  const auth = await requireAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
   const { id } = await params;
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
   const allowed = ['title', 'description', 'start_date', 'end_date', 'location', 'category', 'status'];
@@ -49,10 +48,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
+  const auth = await requireAuth(_req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
   const { id } = await params;
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   const { error } = await supabase
     .from('events')

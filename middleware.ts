@@ -17,6 +17,17 @@ type IpGuardState = {
 
 const ipGuardStore = new Map<string, IpGuardState>();
 
+const PROD_ALLOWED_ORIGINS = [
+  "https://today.unifesto.app",
+  "https://www.unifesto.app",
+  "https://org.unifesto.app",
+  "https://checkin.unifesto.app",
+  "https://events.unifesto.app",
+  "https://admin.unifesto.app",
+];
+
+const DEV_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost:3001"];
+
 const getClientIp = (request: NextRequest) => {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
@@ -83,8 +94,26 @@ const getAllowedOrigin = (origin: string | null) => {
     return null;
   }
 
-  const configured = process.env.NEXT_PUBLIC_ADMIN_DASHBOARD_URL ?? "http://localhost:3000";
-  return origin === configured ? origin : null;
+  const isProd = process.env.NODE_ENV === "production";
+  const configuredOrigins = [
+    process.env.CORS_ALLOWED_ORIGINS,
+    ...PROD_ALLOWED_ORIGINS,
+    ...(isProd ? [] : DEV_ALLOWED_ORIGINS),
+  ]
+    .filter(Boolean)
+    .flatMap((value) =>
+      String(value)
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    );
+
+  return configuredOrigins.includes(origin) ? origin : null;
+};
+
+const forbiddenOriginResponse = (origin: string) => {
+  console.warn(`[cors] Rejected origin: ${origin}`);
+  return NextResponse.json({ success: false, error: "Origin not allowed" }, { status: 403 });
 };
 
 const attachCorsHeaders = (request: NextRequest, response: NextResponse) => {
@@ -96,22 +125,34 @@ const attachCorsHeaders = (request: NextRequest, response: NextResponse) => {
   response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
   response.headers.set("Access-Control-Allow-Credentials", "true");
   response.headers.set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
-  response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  response.headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Requested-With, x-device-id, x-client-info, apikey"
+  );
   response.headers.set("Vary", "Origin");
   return response;
 };
 
 export async function middleware(request: NextRequest) {
-  if (shouldBlockIp(request)) {
+  const isApiRoute = request.nextUrl.pathname.startsWith("/api");
+  const origin = request.headers.get("origin");
+  const allowedOrigin = getAllowedOrigin(origin);
+
+  if (isApiRoute && origin && !allowedOrigin) {
+    return forbiddenOriginResponse(origin);
+  }
+
+  // IP guard should not throttle normal API usage.
+  if (!isApiRoute && shouldBlockIp(request)) {
     if (!request.nextUrl.pathname.startsWith("/api")) {
       return NextResponse.redirect(new URL("/blocked", request.url));
     }
 
-    return prohibitedResponse();
+    return attachCorsHeaders(request, prohibitedResponse());
   }
 
   if (request.method === "OPTIONS") {
-    return attachCorsHeaders(request, new NextResponse(null, { status: 204 }));
+    return attachCorsHeaders(request, new NextResponse(null, { status: 200 }));
   }
 
   const response = createClient(request);

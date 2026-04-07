@@ -6,16 +6,15 @@
 // DELETE → delete (api-keys, categories, announcements, roles ?id=)
 
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
-import { createClient } from '@/utils/supabase/server';
 import crypto from 'crypto';
+import { requireAdminAuth } from '@/lib/request-auth';
 
 type Resource = 'settings' | 'audit-logs' | 'api-keys' | 'announcements' | 'categories' | 'roles';
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const { searchParams } = req.nextUrl;
   const resource = searchParams.get('resource') as Resource;
@@ -88,9 +87,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase, user } = auth;
 
   const resource = req.nextUrl.searchParams.get('resource') as Resource;
   const body = await req.json();
@@ -152,9 +151,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const { searchParams } = req.nextUrl;
   const resource = searchParams.get('resource') as Resource;
@@ -223,9 +222,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const { searchParams } = req.nextUrl;
   const resource = searchParams.get('resource') as Resource;

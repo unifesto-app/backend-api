@@ -5,16 +5,15 @@
 // PATCH → update status (?id=)
 
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
-import { createClient } from '@/utils/supabase/server';
+import { requireAuth } from '@/lib/request-auth';
 
 type FinanceType = 'transactions' | 'invoices' | 'payouts';
 const ALLOWED: FinanceType[] = ['transactions', 'invoices', 'payouts'];
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const { searchParams } = req.nextUrl;
   const type = (searchParams.get('type') ?? 'transactions') as FinanceType;
@@ -44,9 +43,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase, user } = auth;
 
   const type = req.nextUrl.searchParams.get('type') as FinanceType;
   if (!['invoices', 'payouts'].includes(type)) {
@@ -65,9 +64,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const { searchParams } = req.nextUrl;
   const type = searchParams.get('type') as FinanceType;

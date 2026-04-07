@@ -1,11 +1,10 @@
-import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/utils/supabase/server';
+import { NextRequest } from 'next/server';
+import { requireAdminAuth } from '@/lib/request-auth';
 
-export async function POST() {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+export async function POST(req: NextRequest) {
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
 
   revalidatePath('/', 'layout');
   return Response.json({ success: true });

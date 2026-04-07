@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
-import { createClient } from '@/utils/supabase/server';
+import { requireAdminAuth } from '@/lib/request-auth';
 
 const BUCKET = 'admin-media';
 
@@ -9,9 +8,9 @@ function normalizeName(name: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const { searchParams } = req.nextUrl;
   const page = Number(searchParams.get('page') ?? 1);
@@ -38,9 +37,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase, user } = auth;
 
   const form = await req.formData();
   const file = form.get('file');
@@ -87,9 +86,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const supabase = createClient(await cookies());
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAdminAuth(req);
+  if (auth instanceof Response) return auth;
+  const { supabase } = auth;
 
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return Response.json({ success: false, error: 'id is required' }, { status: 400 });
