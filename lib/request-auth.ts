@@ -84,7 +84,7 @@ export async function requireAdminAuth(request: NextRequest): Promise<AuthContex
     return auth;
   }
 
-  const { data: profile, error } = await auth.supabase
+  const { data: profileById, error } = await auth.supabase
     .from("profiles")
     .select("role, status")
     .eq("id", auth.user.id)
@@ -94,8 +94,23 @@ export async function requireAdminAuth(request: NextRequest): Promise<AuthContex
     return forbidden("Unable to validate role");
   }
 
-  const role = String((profile as { role?: string } | null)?.role ?? "").toLowerCase();
-  const status = String((profile as { status?: string } | null)?.status ?? "active").toLowerCase();
+  let profile = profileById as { role?: string; status?: string } | null;
+  if (!profile?.role && email) {
+    const { data: profileByEmail, error: profileByEmailError } = await auth.supabase
+      .from("profiles")
+      .select("role, status")
+      .ilike("email", email)
+      .maybeSingle();
+
+    if (profileByEmailError) {
+      return forbidden("Unable to validate role");
+    }
+
+    profile = (profileByEmail as { role?: string; status?: string } | null) ?? profile;
+  }
+
+  const role = String(profile?.role ?? "").toLowerCase();
+  const status = String(profile?.status ?? "active").toLowerCase();
 
   if (status && status !== "active") {
     return forbidden("Account is not active");
