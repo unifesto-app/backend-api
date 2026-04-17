@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
 import { ApiResponseBuilder } from '@/src/utils/response';
 import { handleError } from '@/src/utils/error-handler';
@@ -12,7 +13,8 @@ export async function GET(req: NextRequest) {
       return ApiResponseBuilder.badRequest('Authorization code is required');
     }
 
-    const supabase = await createClient();
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
 
     // Exchange code for session
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);

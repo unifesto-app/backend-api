@@ -48,7 +48,7 @@ export class AdminService {
       created_by: this.userId,
     });
 
-    return { ...data, key: rawKey };
+    return Object.assign({}, data, { key: rawKey });
   }
 
   async deleteApiKey(id: string) {
