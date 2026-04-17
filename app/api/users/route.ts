@@ -1,59 +1,49 @@
-// Function 1 — /api/users
-// GET  → list users (paginated, filterable)
-// POST → create user
-
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/request-auth';
+import { UserService } from '@/src/services/user.service';
+import { UserRepository } from '@/src/repositories/user.repository';
+import { parsePaginationParams, buildPaginationMeta } from '@/src/utils/pagination';
+import { ApiResponseBuilder } from '@/src/utils/response';
+import { handleError } from '@/src/utils/error-handler';
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const { searchParams } = req.nextUrl;
-  const page = Number(searchParams.get('page') ?? 1);
-  const limit = Number(searchParams.get('limit') ?? 20);
-  const search = searchParams.get('search') ?? '';
-  const role = searchParams.get('role') ?? '';
-  const status = searchParams.get('status') ?? '';
-  const offset = (page - 1) * limit;
+    const repository = new UserRepository(auth.supabase);
+    const service = new UserService(repository);
 
-  let query = supabase
-    .from('profiles')
-    .select('*', { count: 'exact' })
-    .range(offset, offset + limit - 1)
-    .order('created_at', { ascending: false });
+    const { searchParams } = req.nextUrl;
+    const pagination = parsePaginationParams(searchParams);
+    const filters = {
+      search: searchParams.get('search') ?? undefined,
+      role: searchParams.get('role') ?? undefined,
+      status: searchParams.get('status') ?? undefined,
+    };
 
-  if (search) query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%`);
-  if (role) query = query.eq('role', role);
-  if (status) query = query.eq('status', status);
+    const { data, count } = await service.listUsers(pagination, filters);
+    const meta = buildPaginationMeta(pagination.page, pagination.limit, count);
 
-  const { data, error, count } = await query;
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-
-  return Response.json({ success: true, data, meta: { page, limit, total: count ?? 0 } });
+    return ApiResponseBuilder.success(data, meta);
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const body = await req.json();
-  const { email, full_name, role = 'attendee' } = body;
+    const repository = new UserRepository(auth.supabase);
+    const service = new UserService(repository);
 
-  if (!email) {
-    return Response.json({ success: false, error: 'email is required' }, { status: 400 });
+    const body = await req.json();
+    const data = await service.createUser(body);
+
+    return ApiResponseBuilder.created(data);
+  } catch (error) {
+    return handleError(error);
   }
-
-  const { data, error } = await supabase.from('profiles').insert({
-    id: crypto.randomUUID(),
-    email,
-    full_name,
-    role,
-    status: 'active',
-  }).select().single();
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return Response.json({ success: true, data }, { status: 201 });
 }

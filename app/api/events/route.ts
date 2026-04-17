@@ -1,93 +1,50 @@
-// Function 3 — /api/events
-// GET  → list events
-// POST → create event
-
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/request-auth';
-import { isFkCategoryError, resolveCategory } from '@/lib/events-category';
+import { EventService } from '@/src/services/event.service';
+import { EventRepository } from '@/src/repositories/event.repository';
+import { parsePaginationParams, buildPaginationMeta } from '@/src/utils/pagination';
+import { ApiResponseBuilder } from '@/src/utils/response';
+import { handleError } from '@/src/utils/error-handler';
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const { searchParams } = req.nextUrl;
-  const page = Number(searchParams.get('page') ?? 1);
-  const limit = Number(searchParams.get('limit') ?? 20);
-  const search = searchParams.get('search') ?? '';
-  const status = searchParams.get('status') ?? '';
-  const category = searchParams.get('category') ?? '';
-  const date = searchParams.get('date') ?? '';
-  const offset = (page - 1) * limit;
+    const repository = new EventRepository(auth.supabase);
+    const service = new EventService(repository, auth.user.id);
 
-  let query = supabase
-    .from('events')
-    .select('*, organizations(name)', { count: 'exact' })
-    .range(offset, offset + limit - 1)
-    .order('created_at', { ascending: false });
+    const { searchParams } = req.nextUrl;
+    const pagination = parsePaginationParams(searchParams);
+    const filters = {
+      search: searchParams.get('search') ?? undefined,
+      status: searchParams.get('status') ?? undefined,
+      category: searchParams.get('category') ?? undefined,
+      date: searchParams.get('date') ?? undefined,
+    };
 
-  if (search) query = query.ilike('title', `%${search}%`);
-  if (status) query = query.eq('status', status);
-  if (category) query = query.eq('category', category);
-  if (date) query = query.gte('start_date', date);
+    const { data, count } = await service.listEvents(pagination, filters);
+    const meta = buildPaginationMeta(pagination.page, pagination.limit, count);
 
-  const { data, error, count } = await query;
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-
-  return Response.json({ success: true, data, meta: { page, limit, total: count ?? 0 } });
+    return ApiResponseBuilder.success(data, meta);
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase, user } = auth;
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const body = await req.json();
-  const { title, description, start_date, end_date, location, category, organization_id } = body;
+    const repository = new EventRepository(auth.supabase);
+    const service = new EventService(repository, auth.user.id);
 
-  if (!title || !start_date) {
-    return Response.json({ success: false, error: 'title and start_date are required' }, { status: 400 });
+    const body = await req.json();
+    const data = await service.createEvent(body);
+
+    return ApiResponseBuilder.created(data);
+  } catch (error) {
+    return handleError(error);
   }
-
-  const resolvedCategory = await resolveCategory(supabase, category);
-  const categoryValue = category ? resolvedCategory?.id ?? null : null;
-
-  if (category && !resolvedCategory) {
-    return Response.json({ success: false, error: 'Invalid category. Select an existing category.' }, { status: 400 });
-  }
-
-  const { data, error } = await supabase
-    .from('events')
-    .insert({
-      title, description, start_date, end_date,
-      location, category: categoryValue, organization_id,
-      status: 'draft',
-      created_by: user.id,
-    })
-    .select()
-    .single();
-
-  if (error && isFkCategoryError(error.message) && resolvedCategory?.slug) {
-    const retry = await supabase
-      .from('events')
-      .insert({
-        title,
-        description,
-        start_date,
-        end_date,
-        location,
-        category: resolvedCategory.slug,
-        organization_id,
-        status: 'draft',
-        created_by: user.id,
-      })
-      .select()
-      .single();
-
-    if (retry.error) return Response.json({ success: false, error: retry.error.message }, { status: 500 });
-    return Response.json({ success: true, data: retry.data }, { status: 201 });
-  }
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return Response.json({ success: true, data }, { status: 201 });
 }

@@ -1,99 +1,56 @@
-// Function 4 — /api/events/[id]
-// GET    → single event
-// PATCH  → update event
-// DELETE → cancel event
-
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/request-auth';
-import { isFkCategoryError, resolveCategory } from '@/lib/events-category';
+import { EventService } from '@/src/services/event.service';
+import { EventRepository } from '@/src/repositories/event.repository';
+import { ApiResponseBuilder } from '@/src/utils/response';
+import { handleError } from '@/src/utils/error-handler';
 
-type Ctx = { params: Promise<{ id: string }> };
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-export async function GET(_req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(_req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-  const { id } = await params;
+    const { id } = await params;
+    const repository = new EventRepository(auth.supabase);
+    const service = new EventService(repository, auth.user.id);
 
-  const { data, error } = await supabase
-    .from('events')
-    .select('*, organizations(name), registrations(count)')
-    .eq('id', id)
-    .single();
-
-  if (error) return Response.json({ success: false, error: 'Event not found' }, { status: 404 });
-  return Response.json({ success: true, data });
-}
-
-export async function PATCH(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-  const { id } = await params;
-
-  const body = await req.json();
-  const allowed = ['title', 'description', 'start_date', 'end_date', 'location', 'category', 'status'];
-  const updates = Object.fromEntries(
-    Object.entries(body).filter(([k]) => allowed.includes(k))
-  );
-
-  if ('category' in updates) {
-    const rawCategory = updates.category;
-    if (rawCategory === null || rawCategory === '') {
-      updates.category = null;
-    } else {
-      const resolvedCategory = await resolveCategory(supabase, rawCategory);
-      if (!resolvedCategory) {
-        return Response.json({ success: false, error: 'Invalid category. Select an existing category.' }, { status: 400 });
-      }
-      updates.category = resolvedCategory.id;
-
-      const firstTry = await supabase
-        .from('events')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (firstTry.error && isFkCategoryError(firstTry.error.message) && resolvedCategory.slug) {
-        const retry = await supabase
-          .from('events')
-          .update({ ...updates, category: resolvedCategory.slug, updated_at: new Date().toISOString() })
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (retry.error) return Response.json({ success: false, error: retry.error.message }, { status: 500 });
-        return Response.json({ success: true, data: retry.data });
-      }
-
-      if (firstTry.error) return Response.json({ success: false, error: firstTry.error.message }, { status: 500 });
-      return Response.json({ success: true, data: firstTry.data });
-    }
+    const data = await service.getEventById(id);
+    return ApiResponseBuilder.success(data);
+  } catch (error) {
+    return handleError(error);
   }
-
-  const { data, error } = await supabase
-    .from('events')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return Response.json({ success: true, data });
 }
 
-export async function DELETE(_req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(_req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-  const { id } = await params;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const { error } = await supabase
-    .from('events')
-    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-    .eq('id', id);
+    const { id } = await params;
+    const repository = new EventRepository(auth.supabase);
+    const service = new EventService(repository, auth.user.id);
 
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return new Response(null, { status: 204 });
+    const body = await req.json();
+    const data = await service.updateEvent(id, body);
+
+    return ApiResponseBuilder.success(data);
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
+
+    const { id } = await params;
+    const repository = new EventRepository(auth.supabase);
+    const service = new EventService(repository, auth.user.id);
+
+    await service.deleteEvent(id);
+    return ApiResponseBuilder.noContent();
+  } catch (error) {
+    return handleError(error);
+  }
 }

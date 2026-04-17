@@ -1,63 +1,56 @@
-// Function 2 — /api/users/[id]
-// GET    → get single user
-// PATCH  → update user role/status
-// DELETE → delete user
-
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/request-auth';
+import { UserService } from '@/src/services/user.service';
+import { UserRepository } from '@/src/repositories/user.repository';
+import { ApiResponseBuilder } from '@/src/utils/response';
+import { handleError } from '@/src/utils/error-handler';
 
-type Ctx = { params: Promise<{ id: string }> };
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-export async function GET(_req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(_req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-  const { id } = await params;
+    const { id } = await params;
+    const repository = new UserRepository(auth.supabase);
+    const service = new UserService(repository);
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) return Response.json({ success: false, error: 'User not found' }, { status: 404 });
-  return Response.json({ success: true, data });
+    const data = await service.getUserById(id);
+    return ApiResponseBuilder.success(data);
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
-export async function PATCH(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-  const { id } = await params;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const body = await req.json();
-  const allowed = ['role', 'status', 'full_name'];
-  const updates = Object.fromEntries(
-    Object.entries(body).filter(([k]) => allowed.includes(k))
-  );
+    const { id } = await params;
+    const repository = new UserRepository(auth.supabase);
+    const service = new UserService(repository);
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single();
+    const body = await req.json();
+    const data = await service.updateUser(id, body);
 
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return Response.json({ success: true, data });
+    return ApiResponseBuilder.success(data);
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
-export async function DELETE(_req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(_req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-  const { id } = await params;
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({ status: 'deleted', updated_at: new Date().toISOString() })
-    .eq('id', id);
+    const { id } = await params;
+    const repository = new UserRepository(auth.supabase);
+    const service = new UserService(repository);
 
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return new Response(null, { status: 204 });
+    await service.deleteUser(id);
+    return ApiResponseBuilder.noContent();
+  } catch (error) {
+    return handleError(error);
+  }
 }

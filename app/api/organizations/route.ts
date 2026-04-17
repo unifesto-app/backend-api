@@ -1,97 +1,44 @@
-// Function 5 — /api/organizations
-// GET    → list orgs
-// POST   → create org
-// PATCH  → update org (?id=)
-// DELETE → suspend org (?id=)
-
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/request-auth';
+import { OrganizationService } from '@/src/services/organization.service';
+import { OrganizationRepository } from '@/src/repositories/organization.repository';
+import { parsePaginationParams, buildPaginationMeta } from '@/src/utils/pagination';
+import { ApiResponseBuilder } from '@/src/utils/response';
+import { handleError } from '@/src/utils/error-handler';
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const { searchParams } = req.nextUrl;
-  const page = Number(searchParams.get('page') ?? 1);
-  const limit = Number(searchParams.get('limit') ?? 20);
-  const search = searchParams.get('search') ?? '';
-  const status = searchParams.get('status') ?? '';
-  const offset = (page - 1) * limit;
+    const repository = new OrganizationRepository(auth.supabase);
+    const service = new OrganizationService(repository);
 
-  let query = supabase
-    .from('organizations')
-    .select('*, profiles!owner_id(full_name, email)', { count: 'exact' })
-    .range(offset, offset + limit - 1)
-    .order('created_at', { ascending: false });
+    const { searchParams } = req.nextUrl;
+    const pagination = parsePaginationParams(searchParams);
 
-  if (search) query = query.ilike('name', `%${search}%`);
-  if (status) query = query.eq('status', status);
+    const { data, count } = await service.listOrganizations(pagination);
+    const meta = buildPaginationMeta(pagination.page, pagination.limit, count);
 
-  const { data, error, count } = await query;
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-
-  return Response.json({ success: true, data, meta: { page, limit, total: count ?? 0 } });
+    return ApiResponseBuilder.success(data, meta);
+  } catch (error) {
+    return handleError(error);
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return auth;
 
-  const { name, owner_id, description } = await req.json();
-  if (!name || !owner_id) {
-    return Response.json({ success: false, error: 'name and owner_id are required' }, { status: 400 });
+    const repository = new OrganizationRepository(auth.supabase);
+    const service = new OrganizationService(repository);
+
+    const body = await req.json();
+    const data = await service.createOrganization(body);
+
+    return ApiResponseBuilder.created(data);
+  } catch (error) {
+    return handleError(error);
   }
-
-  const { data, error } = await supabase
-    .from('organizations')
-    .insert({ name, owner_id, description, status: 'active' })
-    .select()
-    .single();
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return Response.json({ success: true, data }, { status: 201 });
-}
-
-export async function PATCH(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-
-  const id = req.nextUrl.searchParams.get('id');
-  if (!id) return Response.json({ success: false, error: 'id is required' }, { status: 400 });
-
-  const body = await req.json();
-  const allowed = ['name', 'description', 'status'];
-  const updates = Object.fromEntries(
-    Object.entries(body).filter(([k]) => allowed.includes(k))
-  );
-
-  const { data, error } = await supabase
-    .from('organizations')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return Response.json({ success: true, data });
-}
-
-export async function DELETE(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (auth instanceof Response) return auth;
-  const { supabase } = auth;
-
-  const id = req.nextUrl.searchParams.get('id');
-  if (!id) return Response.json({ success: false, error: 'id is required' }, { status: 400 });
-
-  const { error } = await supabase
-    .from('organizations')
-    .update({ status: 'suspended', updated_at: new Date().toISOString() })
-    .eq('id', id);
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
-  return new Response(null, { status: 204 });
 }
