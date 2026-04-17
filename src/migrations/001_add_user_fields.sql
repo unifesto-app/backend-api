@@ -1,4 +1,5 @@
 -- Migration: Add phone and organization fields to profiles table
+-- Run this in Supabase SQL editor
 
 -- Add phone column if it doesn't exist
 DO $$ 
@@ -22,15 +23,15 @@ BEGIN
   END IF;
 END $$;
 
--- Add index on phone for faster lookups
+-- Add indexes for faster lookups
 CREATE INDEX IF NOT EXISTS idx_profiles_phone ON profiles(phone);
-
--- Add index on organization for faster filtering
 CREATE INDEX IF NOT EXISTS idx_profiles_organization ON profiles(organization);
 
 -- Update existing profiles to have default values if needed
 UPDATE profiles SET phone = NULL WHERE phone = '';
 UPDATE profiles SET organization = NULL WHERE organization = '';
 
+-- Add comments
 COMMENT ON COLUMN profiles.phone IS 'User phone number (10 digits)';
 COMMENT ON COLUMN profiles.organization IS 'User organization/institution name';
+
