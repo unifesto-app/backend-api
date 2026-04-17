@@ -4,6 +4,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/request-auth';
+import { isFkCategoryError, resolveCategory } from '@/lib/events-category';
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -48,16 +49,44 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: false, error: 'title and start_date are required' }, { status: 400 });
   }
 
+  const resolvedCategory = await resolveCategory(supabase, category);
+  const categoryValue = category ? resolvedCategory?.id ?? null : null;
+
+  if (category && !resolvedCategory) {
+    return Response.json({ success: false, error: 'Invalid category. Select an existing category.' }, { status: 400 });
+  }
+
   const { data, error } = await supabase
     .from('events')
     .insert({
       title, description, start_date, end_date,
-      location, category, organization_id,
+      location, category: categoryValue, organization_id,
       status: 'draft',
       created_by: user.id,
     })
     .select()
     .single();
+
+  if (error && isFkCategoryError(error.message) && resolvedCategory?.slug) {
+    const retry = await supabase
+      .from('events')
+      .insert({
+        title,
+        description,
+        start_date,
+        end_date,
+        location,
+        category: resolvedCategory.slug,
+        organization_id,
+        status: 'draft',
+        created_by: user.id,
+      })
+      .select()
+      .single();
+
+    if (retry.error) return Response.json({ success: false, error: retry.error.message }, { status: 500 });
+    return Response.json({ success: true, data: retry.data }, { status: 201 });
+  }
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 });
   return Response.json({ success: true, data }, { status: 201 });
